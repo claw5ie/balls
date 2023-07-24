@@ -12,8 +12,18 @@ const Vec2i = @Vector(2, c_int);
 const SCREEN_WIDTH = 800.0;
 const SCREEN_HEIGHT = 600.0;
 
-const up = SCREEN_HEIGHT / SCREEN_WIDTH / 2.0;
-const down = -SCREEN_HEIGHT / SCREEN_WIDTH / 2.0;
+const UP = SCREEN_HEIGHT / SCREEN_WIDTH;
+const DOWN = -SCREEN_HEIGHT / SCREEN_WIDTH;
+
+const Balls = struct {
+    pos: [*]Vec2,
+    vel: [*]Vec2,
+    force: [*]Vec2,
+    mass: [*]f32,
+    radius: [*]f32,
+    color: [*]ray.Color,
+    count: usize,
+};
 
 fn norm_to_pixel_v2(pos: Vec2) ray.Vector2 {
     return ray.Vector2{
@@ -76,92 +86,140 @@ fn dot(v0: Vec2, v1: Vec2) f32 {
     return v0[0] * v1[0] + v0[1] * v1[1];
 }
 
+fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
+    var acc = Vec2{ 0, 0 };
+    var pos = balls.pos[index];
+    var radius = balls.radius[index];
+
+    if (pos[0] - radius < -1) {
+        acc[0] -= pos[0] - radius + 1;
+        balls.force[index][0] = 0;
+    }
+
+    if (pos[0] + radius > 1) {
+        acc[0] -= pos[0] + radius - 1;
+        balls.force[index][0] = 0;
+    }
+
+    if (pos[1] - radius < DOWN) {
+        acc[1] -= pos[1] - radius - DOWN;
+        balls.force[index][1] = 0;
+    }
+
+    if (pos[1] + radius > UP) {
+        acc[1] -= pos[1] + radius - UP;
+        balls.force[index][1] = 0;
+    }
+
+    balls.pos[index] += acc;
+}
+
 pub fn main() void {
     ray.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hello, Traingles!");
     ray.SetTargetFPS(60);
 
-    const BALL_COUNT = 3;
-    var balls_pos: [BALL_COUNT]Vec2 = undefined;
-    var balls_vel: [BALL_COUNT]Vec2 = undefined;
-    var balls_force: [BALL_COUNT]Vec2 = undefined;
-    const balls_mass = [BALL_COUNT]f32{ 1, 2, 30 };
-    const balls_color = [BALL_COUNT]ray.Color{ ray.MAGENTA, ray.BLUE, ray.DARKBLUE };
-    var balls_radius = [BALL_COUNT]f32{ 0.1, 0.2, 0.02 };
+    var _balls_pos: [3]Vec2 = undefined;
+    var _balls_vel: [3]Vec2 = undefined;
+    var _balls_force: [3]Vec2 = undefined;
+    var _balls_mass = [3]f32{ 2, 7, 10 };
+    var _balls_color = [3]ray.Color{ ray.MAGENTA, ray.BLUE, ray.DARKBLUE };
+    var _balls_radius = [3]f32{ 0.1, 0.2, 0.07 };
 
-    for (balls_pos) |*pos| {
-        pos.*[0] = rand_range(-0.9, 0.9);
-        pos.*[1] = rand_range(down + 0.1, up - 0.1);
+    var balls = Balls{
+        .pos = &_balls_pos,
+        .vel = &_balls_vel,
+        .force = &_balls_force,
+        .mass = &_balls_mass,
+        .radius = &_balls_radius,
+        .color = &_balls_color,
+        .count = 3,
+    };
+
+    {
+        var i: usize = 0;
+        while (i < balls.count) : (i += 1) {
+            balls.pos[i][0] = rand_range(-0.9, 0.9);
+            balls.pos[i][1] = rand_range(DOWN + 0.1, UP - 0.1);
+
+            balls.vel[i][0] = 0;
+            balls.vel[i][1] = 0;
+        }
     }
-
-    std.mem.set(Vec2, &balls_vel, Vec2{ 0, 0 });
 
     const dt: f32 = 1.0 / 60.0;
 
     while (!ray.WindowShouldClose()) {
         ray.BeginDrawing();
         {
-            const GRAVITY_CONSTANT = 0.001;
+            const GRAVITY_CONSTANT = 0.005;
 
-            std.mem.set(Vec2, &balls_force, Vec2{ 0, 0 });
             var i: usize = 0;
-            while (i < BALL_COUNT) : (i += 1) {
+            while (i < balls.count) : (i += 1) {
+                balls.force[i][0] = 0;
+                balls.force[i][1] = 0;
+            }
+
+            i = 0;
+            while (i < balls.count) : (i += 1) {
                 var j: usize = i + 1;
-                while (j < BALL_COUNT) : (j += 1) {
-                    var disp = balls_pos[j] - balls_pos[i];
+                while (j < balls.count) : (j += 1) {
+                    var disp = balls.pos[j] - balls.pos[i];
                     var disp_len = abs_v2(disp);
-                    var force = GRAVITY_CONSTANT * balls_mass[i] * balls_mass[j] / (disp_len * disp_len);
+                    var force = GRAVITY_CONSTANT * balls.mass[i] * balls.mass[j] / (disp_len * disp_len);
 
                     disp /= @splat(2, disp_len);
 
-                    balls_force[i] += disp * @splat(2, force);
-                    balls_force[j] -= disp * @splat(2, force);
+                    balls.force[i] += disp * @splat(2, force);
+                    balls.force[j] -= disp * @splat(2, force);
                 }
             }
 
             i = 0;
-            while (i < BALL_COUNT) : (i += 1) {
+            while (i < balls.count) : (i += 1) {
+                intersect_ball_against_walls(&balls, i);
+
                 var j: usize = i + 1;
-                while (j < BALL_COUNT) : (j += 1) {
-                    var disp = balls_pos[j] - balls_pos[i];
+                while (j < balls.count) : (j += 1) {
+                    var disp = balls.pos[j] - balls.pos[i];
                     var disp_len = abs_v2(disp);
 
                     disp /= @splat(2, disp_len);
 
-                    var half_overlap = balls_radius[i] + balls_radius[j];
-                    if (half_overlap > disp_len) {
-                        half_overlap = (half_overlap - disp_len) / 2;
-                        balls_pos[i] -= @splat(2, half_overlap) * disp;
-                        balls_pos[j] += @splat(2, half_overlap) * disp;
+                    var overlap = balls.radius[i] + balls.radius[j] - disp_len;
+                    if (overlap > 0) {
+                        overlap /= 2;
+                        balls.pos[i] -= @splat(2, overlap) * disp;
+                        balls.pos[j] += @splat(2, overlap) * disp;
 
-                        var perp = if (cross(balls_force[i], disp) > 0)
+                        var perp = if (cross(balls.force[i], disp) > 0)
                             Vec2{ disp[1], -disp[0] }
                         else
                             Vec2{ -disp[1], disp[0] };
 
-                        balls_force[i] = perp * @splat(2, dot(balls_force[i], perp));
+                        balls.force[i] = perp * @splat(2, dot(balls.force[i], perp));
 
-                        perp = if (cross(balls_force[j], disp) > 0)
+                        perp = if (cross(balls.force[j], disp) > 0)
                             Vec2{ disp[1], -disp[0] }
                         else
                             Vec2{ -disp[1], disp[0] };
 
-                        balls_force[j] = perp * @splat(2, dot(balls_force[j], perp));
+                        balls.force[j] = perp * @splat(2, dot(balls.force[j], perp));
                     }
                 }
             }
 
             i = 0;
-            while (i < BALL_COUNT) : (i += 1) {
-                balls_vel[i] += balls_force[i] / @splat(2, balls_mass[i]) * @splat(2, dt);
-                balls_pos[i] += balls_vel[i] * @splat(2, dt);
+            while (i < balls.count) : (i += 1) {
+                balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
+                balls.pos[i] += balls.vel[i] * @splat(2, dt);
 
-                var force = balls_force[i];
+                var force = balls.force[i];
                 normalize_v2(&force);
                 force *= @splat(2, @as(f32, 0.2));
-                force += balls_pos[i];
+                force += balls.pos[i];
 
-                var center = norm_to_pixel_v2(balls_pos[i]);
-                ray.DrawCircleV(center, norm_to_pixel_f(balls_radius[i]), balls_color[i]);
+                var center = norm_to_pixel_v2(balls.pos[i]);
+                ray.DrawCircleV(center, norm_to_pixel_f(balls.radius[i]), balls.color[i]);
                 ray.DrawLineEx(center, norm_to_pixel_v2(force), 3, ray.RED);
             }
 
