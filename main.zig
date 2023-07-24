@@ -93,22 +93,30 @@ fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
 
     if (pos[0] - radius < -1) {
         acc[0] -= pos[0] - radius + 1;
-        balls.force[index][0] = 0;
+        if (balls.force[index][0] < 0) {
+            balls.force[index][0] = 0;
+        }
     }
 
     if (pos[0] + radius > 1) {
         acc[0] -= pos[0] + radius - 1;
-        balls.force[index][0] = 0;
+        if (balls.force[index][0] > 0) {
+            balls.force[index][0] = 0;
+        }
     }
 
     if (pos[1] - radius < DOWN) {
         acc[1] -= pos[1] - radius - DOWN;
-        balls.force[index][1] = 0;
+        if (balls.force[index][1] < 0) {
+            balls.force[index][1] = 0;
+        }
     }
 
     if (pos[1] + radius > UP) {
         acc[1] -= pos[1] + radius - UP;
-        balls.force[index][1] = 0;
+        if (balls.force[index][1] > 0) {
+            balls.force[index][1] = 0;
+        }
     }
 
     balls.pos[index] += acc;
