@@ -73,9 +73,12 @@ fn rand_range(min: f32, max: f32) f32 {
     return @intToFloat(f32, rng.int(u16)) / @as(f32, std.math.maxInt(u16)) * (max - min) + min;
 }
 
-fn normalize_v2(v: *Vec2) void {
-    var abs = abs_v2(v.*);
-    v.* /= @splat(2, abs);
+fn normalize_v2(v: Vec2) Vec2 {
+    var result = v;
+    var len = abs_v2(v);
+    result /= @splat(2, len);
+
+    return result;
 }
 
 fn cross(v0: Vec2, v1: Vec2) f32 {
@@ -91,29 +94,33 @@ fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
     var pos = balls.pos[index];
     var radius = balls.radius[index];
 
-    if (pos[0] - radius < -1) {
-        acc[0] -= pos[0] - radius + 1;
+    var overlap = pos[0] - radius + 1;
+    if (overlap < 0) {
+        acc[0] -= overlap;
         if (balls.force[index][0] < 0) {
             balls.force[index][0] = 0;
         }
     }
 
-    if (pos[0] + radius > 1) {
-        acc[0] -= pos[0] + radius - 1;
+    overlap = pos[0] + radius - 1;
+    if (overlap > 0) {
+        acc[0] -= overlap;
         if (balls.force[index][0] > 0) {
             balls.force[index][0] = 0;
         }
     }
 
-    if (pos[1] - radius < DOWN) {
-        acc[1] -= pos[1] - radius - DOWN;
+    overlap = pos[1] - radius - DOWN;
+    if (overlap < 0) {
+        acc[1] -= overlap;
         if (balls.force[index][1] < 0) {
             balls.force[index][1] = 0;
         }
     }
 
-    if (pos[1] + radius > UP) {
-        acc[1] -= pos[1] + radius - UP;
+    overlap = pos[1] + radius - UP;
+    if (overlap > 0) {
+        acc[1] -= overlap;
         if (balls.force[index][1] > 0) {
             balls.force[index][1] = 0;
         }
@@ -196,6 +203,7 @@ pub fn main() void {
                     var overlap = balls.radius[i] + balls.radius[j] - disp_len;
                     if (overlap > 0) {
                         overlap /= 2;
+
                         balls.pos[i] -= @splat(2, overlap) * disp;
                         balls.pos[j] += @splat(2, overlap) * disp;
 
@@ -221,8 +229,7 @@ pub fn main() void {
                 balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
                 balls.pos[i] += balls.vel[i] * @splat(2, dt);
 
-                var force = balls.force[i];
-                normalize_v2(&force);
+                var force = normalize_v2(balls.force[i]);
                 force *= @splat(2, @as(f32, 0.2));
                 force += balls.pos[i];
 
