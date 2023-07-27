@@ -287,70 +287,75 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
 }
 
 fn draw_balls(balls: *Balls) void {
-    var i: usize = 0;
-    while (i < balls.count) : (i += 1) {
-        balls.force[i] = .{ 0, 0 };
-        balls.disp[i] = .{ 0, 0 };
+    {
+        var i: usize = 0;
+        while (i < balls.count) : (i += 1) {
+            balls.force[i] = .{ 0, 0 };
+            balls.disp[i] = .{ 0, 0 };
+        }
     }
 
     for (balls.edges) |edge| {
         add_spring_force(balls, edge);
     }
 
-    i = 0;
-    while (i < balls.count) : (i += 1) {
-        intersect_ball_against_walls(balls, i);
+    {
+        var i: usize = 0;
+        while (i < balls.count) : (i += 1) {
+            intersect_ball_against_walls(balls, i);
 
-        var j: usize = i + 1;
-        while (j < balls.count) : (j += 1) {
-            var disp = balls.pos[j] - balls.pos[i];
-            var disp_length = abs_v2(disp);
+            var j: usize = i + 1;
+            while (j < balls.count) : (j += 1) {
+                var disp = balls.pos[j] - balls.pos[i];
+                var disp_length = abs_v2(disp);
 
-            disp /= @splat(2, disp_length);
+                disp /= @splat(2, disp_length);
 
-            var overlap = balls.radius[i] + balls.radius[j] - disp_length;
-            if (overlap > 0) {
-                overlap /= 2;
+                var overlap = balls.radius[i] + balls.radius[j] - disp_length;
+                if (overlap > 0) {
+                    overlap /= 2;
 
-                balls.disp[i] -= @splat(2, overlap) * disp;
-                balls.disp[j] += @splat(2, overlap) * disp;
+                    balls.disp[i] -= @splat(2, overlap) * disp;
+                    balls.disp[j] += @splat(2, overlap) * disp;
 
-                var force_disp_comp = dot(balls.force[i], disp);
-                if (force_disp_comp > 0) {
-                    balls.force[i] -= @splat(2, force_disp_comp) * disp;
-                }
+                    var force_disp_comp = dot(balls.force[i], disp);
+                    if (force_disp_comp > 0) {
+                        balls.force[i] -= @splat(2, force_disp_comp) * disp;
+                    }
 
-                if (dot(balls.vel[i], disp) > 0) {
-                    balls.vel[i] = reflect(balls.vel[i], Vec2{ -disp[1], disp[0] });
-                }
+                    if (dot(balls.vel[i], disp) > 0) {
+                        balls.vel[i] = reflect(balls.vel[i], Vec2{ -disp[1], disp[0] });
+                    }
 
-                force_disp_comp = dot(balls.force[j], disp);
-                if (force_disp_comp < 0) {
-                    balls.force[j] -= @splat(2, force_disp_comp) * disp;
-                }
+                    force_disp_comp = dot(balls.force[j], disp);
+                    if (force_disp_comp < 0) {
+                        balls.force[j] -= @splat(2, force_disp_comp) * disp;
+                    }
 
-                if (dot(balls.vel[j], disp) < 0) {
-                    balls.vel[j] = reflect(balls.vel[j], Vec2{ -disp[1], disp[0] });
+                    if (dot(balls.vel[j], disp) < 0) {
+                        balls.vel[j] = reflect(balls.vel[j], Vec2{ -disp[1], disp[0] });
+                    }
                 }
             }
         }
     }
 
-    i = 0;
-    while (i < balls.count) : (i += 1) {
-        balls.pos[i] += balls.disp[i];
+    {
+        var i: usize = 0;
+        while (i < balls.count) : (i += 1) {
+            balls.pos[i] += balls.disp[i];
 
-        balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
-        balls.pos[i] += balls.vel[i] * @splat(2, dt);
+            balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
+            balls.pos[i] += balls.vel[i] * @splat(2, dt);
 
-        var center = norm_to_pixel_v2(balls.pos[i]);
+            var center = norm_to_pixel_v2(balls.pos[i]);
 
-        ray.DrawCircleV(center, norm_to_pixel_f(balls.radius[i]), balls.color[i]);
-        ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
-        ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
+            ray.DrawCircleV(center, norm_to_pixel_f(balls.radius[i]), balls.color[i]);
+            ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
+            ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
+        }
     }
 
-    i = 0;
     for (balls.edges) |edge| {
         draw_spring(balls, edge, ray.GRAY);
     }
