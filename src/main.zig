@@ -1,13 +1,18 @@
 const std = @import("std");
 const ray = @cImport({
     @cInclude("raylib.h");
+    @cInclude("raygui.h");
 });
 
 var prng = std.rand.DefaultPrng.init(42);
 var rng = prng.random();
 
 const Vec2 = @Vector(2, f32);
-const Vec2i = @Vector(2, c_int);
+
+const Rect = struct {
+    pos: Vec2,
+    size: Vec2,
+};
 
 const dt: f32 = 1.0 / 60.0;
 
@@ -44,27 +49,45 @@ const Balls = struct {
     count: usize,
 };
 
-fn norm_to_pixel_v2(pos: Vec2) ray.Vector2 {
+fn norm_coord_in_pixels_v2(pos: Vec2) ray.Vector2 {
     return ray.Vector2{
         .x = (pos[0] + 1) * SCREEN_WIDTH / 2,
         .y = (-pos[1] * SCREEN_WIDTH + SCREEN_HEIGHT) / 2,
     };
 }
 
-fn norm_to_pixel_f(pos: f32) f32 {
+fn norm_coord_in_pixels_r(rect: Rect) ray.Rectangle {
+    var pos = norm_coord_in_pixels_v2(rect.pos);
+
+    return ray.Rectangle{
+        .x = pos.x,
+        .y = pos.y,
+        .width = length_in_pixels(rect.size[0]),
+        .height = length_in_pixels(rect.size[1]),
+    };
+}
+
+fn pixels_in_norm_coord(pos: ray.Vector2) Vec2 {
+    return Vec2{
+        pos.x * 2 / SCREEN_WIDTH - 1,
+        (-pos.y * 2 + SCREEN_HEIGHT) / SCREEN_WIDTH,
+    };
+}
+
+fn length_in_pixels(pos: f32) f32 {
     return pos * SCREEN_WIDTH / 2;
 }
 
-fn dist_v2(v0: Vec2, v1: Vec2) f32 {
+fn dist(v0: Vec2, v1: Vec2) f32 {
     var dx = v0[0] - v1[0];
     var dy = v0[1] - v1[1];
     return abs_v2(Vec2{ dx, dy });
 }
 
-fn dist_square_v2(v0: Vec2, v1: Vec2) f32 {
+fn dist_square(v0: Vec2, v1: Vec2) f32 {
     var dx = v0[0] - v1[0];
     var dy = v0[1] - v1[1];
-    return abs_square_v2(Vec2{ dx, dy });
+    return abs_square(Vec2{ dx, dy });
 }
 
 fn abs_f32(v: f32) f32 {
@@ -84,7 +107,7 @@ fn abs_v2(v: Vec2) f32 {
     }
 }
 
-fn abs_square_v2(v: Vec2) f32 {
+fn abs_square(v: Vec2) f32 {
     return v[0] * v[0] + v[1] * v[1];
 }
 
@@ -92,7 +115,7 @@ fn rand_range(min: f32, max: f32) f32 {
     return @intToFloat(f32, rng.int(u16)) / @as(f32, std.math.maxInt(u16)) * (max - min) + min;
 }
 
-fn normalize_v2(v: Vec2) Vec2 {
+fn normalize(v: Vec2) Vec2 {
     var result = v;
     var length = abs_v2(v);
     result /= @splat(2, length);
@@ -109,10 +132,15 @@ fn dot(v0: Vec2, v1: Vec2) f32 {
 }
 
 fn reflect(vec: Vec2, dir: Vec2) Vec2 {
-    var d = normalize_v2(dir);
+    var d = normalize(dir);
     var w = Vec2{ cross(vec, d), dot(d, vec) };
 
     return Vec2{ cross(d, w), dot(d, w) };
+}
+
+fn is_inside_rect(point: Vec2, rect: Rect) bool {
+    return rect.pos[0] <= point[0] and point[0] <= rect.pos[0] + rect.size[0] and
+        rect.pos[1] <= point[1] and point[1] <= rect.pos[1] + rect.size[1];
 }
 
 fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
@@ -259,8 +287,8 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
         var i: usize = 0;
         while (i < peak_count) : (i += 1) {
             points[i + 2] = peak;
-            peak[1] = -peak[1];
             peak[0] += base_length;
+            peak[1] = -peak[1];
         }
     }
 
@@ -279,85 +307,10 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     {
         var i: usize = 1;
         while (i < point_count) : (i += 1) {
-            var start_in_pixels = norm_to_pixel_v2(points[i - 1]);
-            var end_in_pixels = norm_to_pixel_v2(points[i]);
+            var start_in_pixels = norm_coord_in_pixels_v2(points[i - 1]);
+            var end_in_pixels = norm_coord_in_pixels_v2(points[i]);
             ray.DrawLineV(start_in_pixels, end_in_pixels, color);
         }
-    }
-}
-
-fn draw_balls(balls: *Balls) void {
-    {
-        var i: usize = 0;
-        while (i < balls.count) : (i += 1) {
-            balls.force[i] = .{ 0, 0 };
-            balls.disp[i] = .{ 0, 0 };
-        }
-    }
-
-    for (balls.edges) |edge| {
-        add_spring_force(balls, edge);
-    }
-
-    {
-        var i: usize = 0;
-        while (i < balls.count) : (i += 1) {
-            intersect_ball_against_walls(balls, i);
-
-            var j: usize = i + 1;
-            while (j < balls.count) : (j += 1) {
-                var disp = balls.pos[j] - balls.pos[i];
-                var disp_length = abs_v2(disp);
-
-                disp /= @splat(2, disp_length);
-
-                var overlap = balls.radius[i] + balls.radius[j] - disp_length;
-                if (overlap > 0) {
-                    overlap /= 2;
-
-                    balls.disp[i] -= @splat(2, overlap) * disp;
-                    balls.disp[j] += @splat(2, overlap) * disp;
-
-                    var force_disp_comp = dot(balls.force[i], disp);
-                    if (force_disp_comp > 0) {
-                        balls.force[i] -= @splat(2, force_disp_comp) * disp;
-                    }
-
-                    if (dot(balls.vel[i], disp) > 0) {
-                        balls.vel[i] = reflect(balls.vel[i], Vec2{ -disp[1], disp[0] });
-                    }
-
-                    force_disp_comp = dot(balls.force[j], disp);
-                    if (force_disp_comp < 0) {
-                        balls.force[j] -= @splat(2, force_disp_comp) * disp;
-                    }
-
-                    if (dot(balls.vel[j], disp) < 0) {
-                        balls.vel[j] = reflect(balls.vel[j], Vec2{ -disp[1], disp[0] });
-                    }
-                }
-            }
-        }
-    }
-
-    {
-        var i: usize = 0;
-        while (i < balls.count) : (i += 1) {
-            balls.pos[i] += balls.disp[i];
-
-            balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
-            balls.pos[i] += balls.vel[i] * @splat(2, dt);
-
-            var center = norm_to_pixel_v2(balls.pos[i]);
-
-            ray.DrawCircleV(center, norm_to_pixel_f(balls.radius[i]), balls.color[i]);
-            ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
-            ray.DrawLineEx(center, norm_to_pixel_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
-        }
-    }
-
-    for (balls.edges) |edge| {
-        draw_spring(balls, edge, ray.GRAY);
     }
 }
 
@@ -448,9 +401,168 @@ pub fn main() void {
         }
     }
 
+    var ball_menu_rect = Rect{
+        .pos = .{ -1, DOWN },
+        .size = .{ 0.4, 0.12 },
+    };
+    var should_draw_ball_menu = false;
+
+    const BallMenuInfo = struct {
+        name: [:0]const u8,
+        value: *f32,
+        upper_limit: f32,
+        lower_limit: f32,
+    };
+
+    var ball_menu_info = [_]BallMenuInfo{
+        .{
+            .name = "Mass",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 15,
+        },
+        .{
+            .name = "Radius",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 1.2,
+        },
+    };
+
     while (!ray.WindowShouldClose()) {
         ray.BeginDrawing();
-        draw_balls(&balls);
+
+        // Clean forces and displacements.
+        {
+            var i: usize = 0;
+            while (i < balls.count) : (i += 1) {
+                balls.force[i] = .{ 0, 0 };
+                balls.disp[i] = .{ 0, 0 };
+            }
+        }
+
+        // Apply forces.
+        {
+            for (balls.edges) |edge| {
+                add_spring_force(&balls, edge);
+            }
+        }
+
+        // Resolve collisions and clip forces.
+        {
+            {
+                var i: usize = 0;
+                while (i < balls.count) : (i += 1) {
+                    intersect_ball_against_walls(&balls, i);
+
+                    var j: usize = i + 1;
+                    while (j < balls.count) : (j += 1) {
+                        var disp = balls.pos[j] - balls.pos[i];
+                        var disp_length = abs_v2(disp);
+
+                        disp /= @splat(2, disp_length);
+
+                        var overlap = balls.radius[i] + balls.radius[j] - disp_length;
+                        if (overlap > 0) {
+                            overlap /= 2;
+
+                            balls.disp[i] -= @splat(2, overlap) * disp;
+                            balls.disp[j] += @splat(2, overlap) * disp;
+
+                            var force_disp_comp = dot(balls.force[i], disp);
+                            if (force_disp_comp > 0) {
+                                balls.force[i] -= @splat(2, force_disp_comp) * disp;
+                            }
+
+                            if (dot(balls.vel[i], disp) > 0) {
+                                balls.vel[i] = reflect(balls.vel[i], Vec2{ -disp[1], disp[0] });
+                            }
+
+                            force_disp_comp = dot(balls.force[j], disp);
+                            if (force_disp_comp < 0) {
+                                balls.force[j] -= @splat(2, force_disp_comp) * disp;
+                            }
+
+                            if (dot(balls.vel[j], disp) < 0) {
+                                balls.vel[j] = reflect(balls.vel[j], Vec2{ -disp[1], disp[0] });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Move balls and draw them.
+        {
+            {
+                var i: usize = 0;
+                while (i < balls.count) : (i += 1) {
+                    balls.pos[i] += balls.disp[i];
+
+                    balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
+                    balls.pos[i] += balls.vel[i] * @splat(2, dt);
+                }
+            }
+
+            {
+                var i: usize = 0;
+                while (i < balls.count) : (i += 1) {
+                    var center = norm_coord_in_pixels_v2(balls.pos[i]);
+                    ray.DrawCircleV(center, length_in_pixels(balls.radius[i]), balls.color[i]);
+                    ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
+                    ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
+                }
+            }
+
+            for (balls.edges) |edge| {
+                draw_spring(&balls, edge, ray.GRAY);
+            }
+        }
+
+        // Select ball.
+        {
+            var mouse_pos = pixels_in_norm_coord(ray.GetMousePosition());
+
+            if (ray.IsMouseButtonPressed(ray.MOUSE_BUTTON_LEFT)) {
+                if (!is_inside_rect(mouse_pos, ball_menu_rect)) {
+                    var is_ball_inside = false;
+
+                    var i: usize = 0;
+                    while (i < balls.count) : (i += 1) {
+                        var pos = balls.pos[i];
+                        pos -= mouse_pos;
+                        pos *= pos;
+
+                        var radius = balls.radius[i];
+                        radius *= radius;
+
+                        if (pos[0] + pos[1] <= radius) {
+                            is_ball_inside = true;
+                            ball_menu_info[0].value = &balls.mass[i];
+                            ball_menu_info[1].value = &balls.radius[i];
+                            break;
+                        }
+                    }
+
+                    should_draw_ball_menu = is_ball_inside;
+                }
+            }
+        }
+
+        // Draw sliders.
+        {
+            if (should_draw_ball_menu) {
+                var rect = norm_coord_in_pixels_r(ball_menu_rect);
+                rect.y -= rect.height;
+                rect.height /= @intToFloat(f32, ball_menu_info.len);
+
+                for (ball_menu_info) |slider| {
+                    _ = ray.GuiSlider(rect, "", slider.name.ptr, slider.value, slider.lower_limit, slider.upper_limit);
+                    rect.y += rect.height;
+                }
+            }
+        }
+
         ray.ClearBackground(ray.DARKPURPLE);
         ray.EndDrawing();
     }
