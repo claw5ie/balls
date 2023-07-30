@@ -19,8 +19,10 @@ const dt: f32 = 1.0 / 60.0;
 const SCREEN_WIDTH = 800.0;
 const SCREEN_HEIGHT = 600.0;
 
-const UP = SCREEN_HEIGHT / SCREEN_WIDTH;
-const DOWN = -SCREEN_HEIGHT / SCREEN_WIDTH;
+const LEFT = -2.0;
+const RIGHT = 2.0;
+const DOWN = -SCREEN_HEIGHT / SCREEN_WIDTH * (RIGHT - LEFT) / 2.0;
+const UP = -DOWN;
 
 const Spring = struct {
     start: usize,
@@ -50,9 +52,12 @@ const Balls = struct {
 };
 
 fn norm_coord_in_pixels_v2(pos: Vec2) ray.Vector2 {
+    // x in [LEFT, RIGHT] -> x' in [0, SCREEN_WIDTH]
+    // y in [DOWN, UP]    -> y' in [SCREEN_HEIGHT, 0]
+
     return ray.Vector2{
-        .x = (pos[0] + 1) * SCREEN_WIDTH / 2,
-        .y = (-pos[1] * SCREEN_WIDTH + SCREEN_HEIGHT) / 2,
+        .x = (pos[0] - LEFT) / (RIGHT - LEFT) * SCREEN_WIDTH,
+        .y = (pos[1] - UP) / (DOWN - UP) * SCREEN_HEIGHT,
     };
 }
 
@@ -69,13 +74,13 @@ fn norm_coord_in_pixels_r(rect: Rect) ray.Rectangle {
 
 fn pixels_in_norm_coord(pos: ray.Vector2) Vec2 {
     return Vec2{
-        pos.x * 2 / SCREEN_WIDTH - 1,
-        (-pos.y * 2 + SCREEN_HEIGHT) / SCREEN_WIDTH,
+        LEFT + pos.x / SCREEN_WIDTH * (RIGHT - LEFT),
+        UP + pos.y / SCREEN_HEIGHT * (DOWN - UP),
     };
 }
 
-fn length_in_pixels(pos: f32) f32 {
-    return pos * SCREEN_WIDTH / 2;
+fn length_in_pixels(length: f32) f32 {
+    return length * SCREEN_WIDTH / (RIGHT - LEFT);
 }
 
 fn dist(v0: Vec2, v1: Vec2) f32 {
@@ -147,7 +152,7 @@ fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
     var pos = balls.pos[index];
     var radius = balls.radius[index];
 
-    var overlap = pos[0] - radius + 1;
+    var overlap = pos[0] - radius - LEFT;
     if (overlap < 0) {
         balls.disp[index][0] -= overlap;
         if (balls.force[index][0] < 0) {
@@ -159,7 +164,7 @@ fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
         }
     }
 
-    overlap = pos[0] + radius - 1;
+    overlap = pos[0] + radius - RIGHT;
     if (overlap > 0) {
         balls.disp[index][0] -= overlap;
         if (balls.force[index][0] > 0) {
@@ -394,7 +399,7 @@ pub fn main() void {
         var i: usize = 0;
         while (i < balls.count) : (i += 1) {
             balls.pos[i] = .{
-                rand_range(-0.9, 0.9),
+                rand_range(LEFT + 0.1, RIGHT - 0.1),
                 rand_range(DOWN + 0.1, UP - 0.1),
             };
             balls.vel[i] = .{ 0, 0 };
@@ -402,7 +407,7 @@ pub fn main() void {
     }
 
     var ball_menu_rect = Rect{
-        .pos = .{ -1, DOWN },
+        .pos = .{ LEFT, DOWN },
         .size = .{ 0.4, 0.12 },
     };
     var should_draw_ball_menu = false;
