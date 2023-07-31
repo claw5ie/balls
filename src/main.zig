@@ -329,14 +329,10 @@ pub fn main() void {
     ray.SetTargetFPS(60);
 
     const MAX_BALL_COUNT = 3;
-    var _balls_pos: [MAX_BALL_COUNT]Vec2 = .{
-        .{ -0.5, 0.5 },
-        .{ -0.5, -0.5 },
-        .{ 0.5, -0.5 },
-    };
-    var _balls_vel: [MAX_BALL_COUNT]Vec2 = undefined;
-    var _balls_force: [MAX_BALL_COUNT]Vec2 = undefined;
-    var _balls_disp: [MAX_BALL_COUNT]Vec2 = undefined;
+    var _balls_pos = [_]Vec2{.{ 0, 0 }} ** MAX_BALL_COUNT;
+    var _balls_vel = [_]Vec2{.{ 0, 0 }} ** MAX_BALL_COUNT;
+    var _balls_force = [_]Vec2{.{ 0, 0 }} ** MAX_BALL_COUNT;
+    var _balls_disp = [_]Vec2{.{ 0, 0 }} ** MAX_BALL_COUNT;
     var _balls_mass = [MAX_BALL_COUNT]f32{ 2, 5, 10 };
     var _balls_color = [MAX_BALL_COUNT]ray.Color{
         ray.MAGENTA,
@@ -402,7 +398,6 @@ pub fn main() void {
                 rand_range(LEFT + 0.1, RIGHT - 0.1),
                 rand_range(DOWN + 0.1, UP - 0.1),
             };
-            balls.vel[i] = .{ 0, 0 };
         }
     }
 
@@ -436,6 +431,38 @@ pub fn main() void {
 
     while (!ray.WindowShouldClose()) {
         ray.BeginDrawing();
+        ray.ClearBackground(ray.DARKPURPLE);
+
+        {
+            var i: usize = 0;
+            while (i < balls.count) : (i += 1) {
+                var center = norm_coord_in_pixels_v2(balls.pos[i]);
+                ray.DrawCircleV(center, length_in_pixels(balls.radius[i]), balls.color[i]);
+                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
+                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
+            }
+        }
+
+        // Draw springs.
+        {
+            for (balls.edges) |edge| {
+                draw_spring(&balls, edge, ray.GRAY);
+            }
+        }
+
+        // Draw sliders.
+        {
+            if (should_draw_ball_menu) {
+                var rect = norm_coord_in_pixels_r(ball_menu_rect);
+                rect.y -= rect.height;
+                rect.height /= @intToFloat(f32, ball_menu_info.len);
+
+                for (ball_menu_info) |slider| {
+                    _ = ray.GuiSlider(rect, "", slider.name.ptr, slider.value, slider.lower_limit, slider.upper_limit);
+                    rect.y += rect.height;
+                }
+            }
+        }
 
         // Clean forces and displacements.
         {
@@ -497,33 +524,6 @@ pub fn main() void {
             }
         }
 
-        // Move balls and draw them.
-        {
-            {
-                var i: usize = 0;
-                while (i < balls.count) : (i += 1) {
-                    balls.pos[i] += balls.disp[i];
-
-                    balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
-                    balls.pos[i] += balls.vel[i] * @splat(2, dt);
-                }
-            }
-
-            {
-                var i: usize = 0;
-                while (i < balls.count) : (i += 1) {
-                    var center = norm_coord_in_pixels_v2(balls.pos[i]);
-                    ray.DrawCircleV(center, length_in_pixels(balls.radius[i]), balls.color[i]);
-                    ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
-                    ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
-                }
-            }
-
-            for (balls.edges) |edge| {
-                draw_spring(&balls, edge, ray.GRAY);
-            }
-        }
-
         // Select ball.
         {
             var mouse_pos = pixels_in_norm_coord(ray.GetMousePosition());
@@ -554,21 +554,17 @@ pub fn main() void {
             }
         }
 
-        // Draw sliders.
+        // Move balls
         {
-            if (should_draw_ball_menu) {
-                var rect = norm_coord_in_pixels_r(ball_menu_rect);
-                rect.y -= rect.height;
-                rect.height /= @intToFloat(f32, ball_menu_info.len);
+            var i: usize = 0;
+            while (i < balls.count) : (i += 1) {
+                balls.pos[i] += balls.disp[i];
 
-                for (ball_menu_info) |slider| {
-                    _ = ray.GuiSlider(rect, "", slider.name.ptr, slider.value, slider.lower_limit, slider.upper_limit);
-                    rect.y += rect.height;
-                }
+                balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
+                balls.pos[i] += balls.vel[i] * @splat(2, dt);
             }
         }
 
-        ray.ClearBackground(ray.DARKPURPLE);
         ray.EndDrawing();
     }
 
