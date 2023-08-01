@@ -14,6 +14,12 @@ const Rect = struct {
     size: Vec2,
 };
 
+const Parallelogram = struct {
+    pos: Vec2,
+    width: Vec2,
+    height: Vec2,
+};
+
 const dt: f32 = 1.0 / 60.0;
 
 const SCREEN_WIDTH = 800.0;
@@ -63,13 +69,14 @@ fn norm_coord_in_pixels_v2(pos: Vec2) ray.Vector2 {
 
 fn norm_coord_in_pixels_r(rect: Rect) ray.Rectangle {
     var pos = norm_coord_in_pixels_v2(rect.pos);
-
-    return ray.Rectangle{
+    var result = ray.Rectangle{
         .x = pos.x,
         .y = pos.y,
         .width = length_in_pixels(rect.size[0]),
         .height = length_in_pixels(rect.size[1]),
     };
+    result.y -= result.height;
+    return result;
 }
 
 fn pixels_in_norm_coord(pos: ray.Vector2) Vec2 {
@@ -84,15 +91,13 @@ fn length_in_pixels(length: f32) f32 {
 }
 
 fn dist(v0: Vec2, v1: Vec2) f32 {
-    var dx = v0[0] - v1[0];
-    var dy = v0[1] - v1[1];
-    return abs_v2(Vec2{ dx, dy });
+    return abs_v2(v0 - v1);
 }
 
 fn dist_square(v0: Vec2, v1: Vec2) f32 {
-    var dx = v0[0] - v1[0];
-    var dy = v0[1] - v1[1];
-    return abs_square(Vec2{ dx, dy });
+    var result = v0 - v1;
+    result *= result;
+    return result;
 }
 
 fn abs_f32(v: f32) f32 {
@@ -100,20 +105,15 @@ fn abs_f32(v: f32) f32 {
 }
 
 fn abs_v2(v: Vec2) f32 {
-    var x = v[0];
-    var y = v[1];
-    var m = std.math.max(abs_f32(x), abs_f32(y));
+    var u = v;
+    var m = std.math.max(abs_f32(v[0]), abs_f32(v[1]));
     if (m == 0) {
         return 0;
     } else {
-        x /= m;
-        y /= m;
-        return m * std.math.sqrt(x * x + y * y);
+        u /= @splat(2, m);
+        u *= u;
+        return m * std.math.sqrt(u[0] + u[1]);
     }
-}
-
-fn abs_square(v: Vec2) f32 {
-    return v[0] * v[0] + v[1] * v[1];
 }
 
 fn rand_range(min: f32, max: f32) f32 {
@@ -143,9 +143,33 @@ fn reflect(vec: Vec2, dir: Vec2) Vec2 {
     return Vec2{ cross(d, w), dot(d, w) };
 }
 
+fn clamped_frac(value: f32, lower_bound: f32, upper_bound: f32) f32 {
+    return (std.math.clamp(value, lower_bound, upper_bound) - lower_bound) / (upper_bound - lower_bound);
+}
+
+fn normal_vector(v: Vec2) Vec2 {
+    var n = normalize(v);
+    return Vec2{ -n[1], n[0] };
+}
+
 fn is_inside_rect(point: Vec2, rect: Rect) bool {
     return rect.pos[0] <= point[0] and point[0] <= rect.pos[0] + rect.size[0] and
         rect.pos[1] <= point[1] and point[1] <= rect.pos[1] + rect.size[1];
+}
+
+fn is_inside_parallelogram(point: Vec2, shape: Parallelogram) bool {
+    // | width[0] height[0] |^(-1)                        1                           | height[1] -height[0] |
+    // | width[1] height[1] |      = ---------------------------------------------- * | -width[1]  width[0]  |
+    //                                 width[0] * height[1] - width[1] * height[0]
+
+    var det = shape.width[0] * shape.height[1] - shape.width[1] * shape.height[0];
+    std.debug.assert(det > 1e-8);
+    var p = (point - shape.pos) / @splat(2, det);
+
+    var x = (shape.height[1] * p[0] - shape.height[0] * p[1]);
+    var y = (-shape.width[1] * p[0] + shape.width[0] * p[1]);
+
+    return 0 <= x and x <= 1 and 0 <= y and y <= 1;
 }
 
 fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
@@ -286,7 +310,7 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
         var base_length = (full_length - 2 * spring.hand_length) / @intToFloat(f32, peak_count);
         var peak = Vec2{
             points[1][0] + base_length / 2,
-            (std.math.clamp(full_length, spring.min_length, spring.max_length) - spring.max_length) / (spring.min_length - spring.max_length) * spring.half_height,
+            (1.0 - clamped_frac(full_length, spring.min_length, spring.max_length)) * spring.half_height,
         };
 
         var i: usize = 0;
@@ -401,20 +425,14 @@ pub fn main() void {
         }
     }
 
-    var ball_menu_rect = Rect{
-        .pos = .{ LEFT, DOWN },
-        .size = .{ 0.4, 0.12 },
-    };
-    var should_draw_ball_menu = false;
-
-    const BallMenuInfo = struct {
+    const SliderInfo = struct {
         name: [:0]const u8,
         value: *f32,
         upper_limit: f32,
         lower_limit: f32,
     };
 
-    var ball_menu_info = [_]BallMenuInfo{
+    var ball_menu_info = [_]SliderInfo{
         .{
             .name = "Mass",
             .value = undefined,
@@ -428,6 +446,50 @@ pub fn main() void {
             .upper_limit = 1.2,
         },
     };
+
+    var spring_menu_info = [_]SliderInfo{
+        .{
+            .name = "Stiffness",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 10,
+        },
+        .{
+            .name = "Rest Length",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 10,
+        },
+        .{
+            .name = "Minimum Length",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 10,
+        },
+        .{
+            .name = "Maximum Length",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 10,
+        },
+        .{
+            .name = "Damping Factor",
+            .value = undefined,
+            .lower_limit = 0.01,
+            .upper_limit = 10,
+        },
+    };
+
+    var ball_menu_hitbox = Rect{
+        .pos = .{ LEFT, DOWN },
+        .size = .{ 1.2, 0.12 * @intToFloat(f32, ball_menu_info.len) },
+    };
+    var should_draw_ball_menu = false;
+    var spring_menu_hitbox = Rect{
+        .pos = .{ LEFT, DOWN },
+        .size = .{ 1.2, 0.12 * @intToFloat(f32, spring_menu_info.len) },
+    };
+    var should_draw_spring_menu = false;
 
     while (!ray.WindowShouldClose()) {
         ray.BeginDrawing();
@@ -453,14 +515,87 @@ pub fn main() void {
         // Draw sliders.
         {
             if (should_draw_ball_menu) {
-                var rect = norm_coord_in_pixels_r(ball_menu_rect);
-                rect.y -= rect.height;
+                var rect = norm_coord_in_pixels_r(ball_menu_hitbox);
                 rect.height /= @intToFloat(f32, ball_menu_info.len);
 
                 for (ball_menu_info) |slider| {
-                    _ = ray.GuiSlider(rect, "", slider.name.ptr, slider.value, slider.lower_limit, slider.upper_limit);
+                    _ = ray.GuiSlider(
+                        rect,
+                        "",
+                        slider.name.ptr,
+                        slider.value,
+                        slider.lower_limit,
+                        slider.upper_limit,
+                    );
                     rect.y += rect.height;
                 }
+            }
+
+            if (should_draw_spring_menu) {
+                var rect = norm_coord_in_pixels_r(spring_menu_hitbox);
+                rect.height /= @intToFloat(f32, spring_menu_info.len);
+
+                var slider = &spring_menu_info[0];
+                _ = ray.GuiSlider(
+                    rect,
+                    "",
+                    slider.name.ptr,
+                    slider.value,
+                    slider.lower_limit,
+                    slider.upper_limit,
+                );
+                rect.y += rect.height;
+                slider = &spring_menu_info[1];
+                _ = ray.GuiSlider(
+                    rect,
+                    "",
+                    slider.name.ptr,
+                    slider.value,
+                    std.math.max(
+                        slider.lower_limit,
+                        spring_menu_info[2].value.*,
+                    ),
+                    std.math.min(
+                        slider.upper_limit,
+                        spring_menu_info[3].value.*,
+                    ),
+                );
+                rect.y += rect.height;
+                slider = &spring_menu_info[2];
+                _ = ray.GuiSlider(
+                    rect,
+                    "",
+                    slider.name.ptr,
+                    slider.value,
+                    slider.lower_limit,
+                    std.math.min(
+                        slider.upper_limit,
+                        spring_menu_info[3].value.*,
+                    ),
+                );
+                rect.y += rect.height;
+                slider = &spring_menu_info[3];
+                _ = ray.GuiSlider(
+                    rect,
+                    "",
+                    slider.name.ptr,
+                    slider.value,
+                    std.math.max(
+                        slider.lower_limit,
+                        spring_menu_info[2].value.*,
+                    ),
+                    slider.upper_limit,
+                );
+                rect.y += rect.height;
+                slider = &spring_menu_info[4];
+                _ = ray.GuiSlider(
+                    rect,
+                    "",
+                    slider.name.ptr,
+                    slider.value,
+                    slider.lower_limit,
+                    slider.upper_limit,
+                );
             }
         }
 
@@ -524,12 +659,12 @@ pub fn main() void {
             }
         }
 
-        // Select ball.
+        // Select ball or spring.
         {
             var mouse_pos = pixels_in_norm_coord(ray.GetMousePosition());
 
             if (ray.IsMouseButtonPressed(ray.MOUSE_BUTTON_LEFT)) {
-                if (!is_inside_rect(mouse_pos, ball_menu_rect)) {
+                if (!should_draw_spring_menu and !is_inside_rect(mouse_pos, ball_menu_hitbox)) {
                     var is_ball_inside = false;
 
                     var i: usize = 0;
@@ -550,6 +685,34 @@ pub fn main() void {
                     }
 
                     should_draw_ball_menu = is_ball_inside;
+                }
+
+                if (!should_draw_ball_menu and !is_inside_rect(mouse_pos, spring_menu_hitbox)) {
+                    var is_spring_inside = false;
+
+                    for (balls.edges) |*edge| {
+                        var width = balls.pos[edge.end] - balls.pos[edge.start];
+                        var full_length = abs_v2(width);
+                        var height = @splat(2, (1.0 - clamped_frac(full_length, edge.min_length, edge.max_length)) * edge.half_height * 2) * normal_vector(width);
+
+                        var spring_hitbox = Parallelogram{
+                            .pos = balls.pos[edge.start] - height / @splat(2, @as(f32, 2)),
+                            .width = width,
+                            .height = height,
+                        };
+
+                        if (is_inside_parallelogram(mouse_pos, spring_hitbox)) {
+                            is_spring_inside = true;
+                            spring_menu_info[0].value = &edge.stiffness;
+                            spring_menu_info[1].value = &edge.rest_length;
+                            spring_menu_info[2].value = &edge.min_length;
+                            spring_menu_info[3].value = &edge.max_length;
+                            spring_menu_info[4].value = &edge.damping_factor;
+                            break;
+                        }
+                    }
+
+                    should_draw_spring_menu = is_spring_inside;
                 }
             }
         }
