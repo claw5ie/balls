@@ -106,24 +106,28 @@ fn abs_f32(v: f32) f32 {
 
 fn abs_v2(v: Vec2) f32 {
     var u = v;
-    var m = std.math.max(abs_f32(v[0]), abs_f32(v[1]));
+    var m = @max(abs_f32(v[0]), abs_f32(v[1]));
     if (m == 0) {
         return 0;
     } else {
-        u /= @splat(2, m);
+        u /= @splat(m);
         u *= u;
         return m * std.math.sqrt(u[0] + u[1]);
     }
 }
 
 fn rand_range(min: f32, max: f32) f32 {
-    return @intToFloat(f32, rng.int(u16)) / @as(f32, std.math.maxInt(u16)) * (max - min) + min;
+    return @as(f32, @floatFromInt(rng.int(u16))) / std.math.maxInt(u16) * (max - min) + min;
+}
+
+inline fn splat_v2(scalar: f32) Vec2 {
+    return @splat(scalar);
 }
 
 fn normalize(v: Vec2) Vec2 {
     var result = v;
     var length = abs_v2(v);
-    result /= @splat(2, length);
+    result /= @splat(length);
 
     return result;
 }
@@ -164,7 +168,7 @@ fn is_inside_parallelogram(point: Vec2, shape: Parallelogram) bool {
 
     var det = shape.width[0] * shape.height[1] - shape.width[1] * shape.height[0];
     std.debug.assert(det > 1e-8);
-    var p = (point - shape.pos) / @splat(2, det);
+    var p = (point - shape.pos) / splat_v2(det);
 
     var x = (shape.height[1] * p[0] - shape.height[0] * p[1]);
     var y = (-shape.width[1] * p[0] + shape.width[0] * p[1]);
@@ -232,10 +236,10 @@ fn add_gravity_force(balls: *Balls, i: usize, j: usize) void {
     var disp_length = abs_v2(disp);
     var force = GRAVITY_CONSTANT * balls.mass[i] * balls.mass[j] / (disp_length * disp_length);
 
-    disp /= @splat(2, disp_length);
+    disp /= @splat(disp_length);
 
-    balls.force[i] += disp * @splat(2, force);
-    balls.force[j] -= disp * @splat(2, force);
+    balls.force[i] += disp * splat_v2(force);
+    balls.force[j] -= disp * splat_v2(force);
 }
 
 fn add_spring_force(balls: *Balls, spring: Spring) void {
@@ -244,45 +248,45 @@ fn add_spring_force(balls: *Balls, spring: Spring) void {
     var disp = balls.pos[j] - balls.pos[i];
     var disp_length = abs_v2(disp);
 
-    disp /= @splat(2, disp_length);
+    disp /= @splat(disp_length);
 
     var damping = dot(disp, balls.vel[j] - balls.vel[i]) * spring.damping_factor;
     var force = spring.stiffness * (disp_length - spring.rest_length) + damping;
 
-    balls.force[i] += @splat(2, force) * disp;
-    balls.force[j] -= @splat(2, force) * disp;
+    balls.force[i] += splat_v2(force) * disp;
+    balls.force[j] -= splat_v2(force) * disp;
 
     var overlap = disp_length - spring.max_length;
     if (overlap > 0) {
         overlap /= 2;
-        balls.disp[i] += @splat(2, overlap) * disp;
-        balls.disp[j] -= @splat(2, overlap) * disp;
+        balls.disp[i] += splat_v2(overlap) * disp;
+        balls.disp[j] -= splat_v2(overlap) * disp;
 
         var force_disp_comp = dot(balls.force[i], disp);
         if (force_disp_comp < 0) {
-            balls.force[i] -= @splat(2, force_disp_comp) * disp;
+            balls.force[i] -= splat_v2(force_disp_comp) * disp;
         }
 
         force_disp_comp = dot(balls.force[j], disp);
         if (force_disp_comp > 0) {
-            balls.force[j] -= @splat(2, force_disp_comp) * disp;
+            balls.force[j] -= splat_v2(force_disp_comp) * disp;
         }
     }
 
     overlap = disp_length - spring.min_length;
     if (overlap < 0) {
         overlap /= 2;
-        balls.disp[i] += @splat(2, overlap) * disp;
-        balls.disp[j] -= @splat(2, overlap) * disp;
+        balls.disp[i] += splat_v2(overlap) * disp;
+        balls.disp[j] -= splat_v2(overlap) * disp;
 
         var force_disp_comp = dot(balls.force[i], disp);
         if (force_disp_comp > 0) {
-            balls.force[i] -= @splat(2, force_disp_comp) * disp;
+            balls.force[i] -= splat_v2(force_disp_comp) * disp;
         }
 
         force_disp_comp = dot(balls.force[j], disp);
         if (force_disp_comp < 0) {
-            balls.force[j] -= @splat(2, force_disp_comp) * disp;
+            balls.force[j] -= splat_v2(force_disp_comp) * disp;
         }
     }
 }
@@ -294,9 +298,9 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     var disp = balls.pos[spring.end] - start;
     var full_length = abs_v2(disp);
 
-    disp /= @splat(2, full_length);
+    disp /= @splat(full_length);
 
-    var peak_count = 2 * spring.blade_count - @boolToInt(spring.blade_count % 2 == 0);
+    var peak_count = 2 * spring.blade_count - @intFromBool(spring.blade_count % 2 == 0);
     var point_count = peak_count + 2 * 2;
     var points: []Vec2 = spring_points_buffer[0..point_count];
 
@@ -307,7 +311,7 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     points[point_count - 1] = Vec2{ full_length, 0 };
 
     {
-        var base_length = (full_length - 2 * spring.hand_length) / @intToFloat(f32, peak_count);
+        var base_length = (full_length - 2 * spring.hand_length) / @as(f32, @floatFromInt(peak_count));
         var peak = Vec2{
             points[1][0] + base_length / 2,
             (1.0 - clamped_frac(full_length, spring.min_length, spring.max_length)) * spring.half_height,
@@ -482,12 +486,12 @@ pub fn main() void {
 
     var ball_menu_hitbox = Rect{
         .pos = .{ LEFT, DOWN },
-        .size = .{ 1.2, 0.12 * @intToFloat(f32, ball_menu_info.len) },
+        .size = .{ 1.2, 0.12 * @as(f32, @floatFromInt(ball_menu_info.len)) },
     };
     var should_draw_ball_menu = false;
     var spring_menu_hitbox = Rect{
         .pos = .{ LEFT, DOWN },
-        .size = .{ 1.2, 0.12 * @intToFloat(f32, spring_menu_info.len) },
+        .size = .{ 1.2, 0.12 * @as(f32, @floatFromInt(spring_menu_info.len)) },
     };
     var should_draw_spring_menu = false;
 
@@ -500,8 +504,8 @@ pub fn main() void {
             while (i < balls.count) : (i += 1) {
                 var center = norm_coord_in_pixels_v2(balls.pos[i]);
                 ray.DrawCircleV(center, length_in_pixels(balls.radius[i]), balls.color[i]);
-                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / @splat(2, @as(f32, 4))), 3, ray.RED);
-                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / @splat(2, @as(f32, 4))), 3, ray.GREEN);
+                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / splat_v2(4)), 3, ray.RED);
+                ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / splat_v2(4)), 3, ray.GREEN);
             }
         }
 
@@ -516,7 +520,7 @@ pub fn main() void {
         {
             if (should_draw_ball_menu) {
                 var rect = norm_coord_in_pixels_r(ball_menu_hitbox);
-                rect.height /= @intToFloat(f32, ball_menu_info.len);
+                rect.height /= @as(f32, @floatFromInt(ball_menu_info.len));
 
                 for (ball_menu_info) |slider| {
                     _ = ray.GuiSlider(
@@ -533,7 +537,7 @@ pub fn main() void {
 
             if (should_draw_spring_menu) {
                 var rect = norm_coord_in_pixels_r(spring_menu_hitbox);
-                rect.height /= @intToFloat(f32, spring_menu_info.len);
+                rect.height /= @as(f32, @floatFromInt(spring_menu_info.len));
 
                 var slider = &spring_menu_info[0];
                 _ = ray.GuiSlider(
@@ -551,11 +555,11 @@ pub fn main() void {
                     "",
                     slider.name.ptr,
                     slider.value,
-                    std.math.max(
+                    @max(
                         slider.lower_limit,
                         spring_menu_info[2].value.*,
                     ),
-                    std.math.min(
+                    @min(
                         slider.upper_limit,
                         spring_menu_info[3].value.*,
                     ),
@@ -568,7 +572,7 @@ pub fn main() void {
                     slider.name.ptr,
                     slider.value,
                     slider.lower_limit,
-                    std.math.min(
+                    @min(
                         slider.upper_limit,
                         spring_menu_info[3].value.*,
                     ),
@@ -580,7 +584,7 @@ pub fn main() void {
                     "",
                     slider.name.ptr,
                     slider.value,
-                    std.math.max(
+                    @max(
                         slider.lower_limit,
                         spring_menu_info[2].value.*,
                     ),
@@ -627,18 +631,18 @@ pub fn main() void {
                         var disp = balls.pos[j] - balls.pos[i];
                         var disp_length = abs_v2(disp);
 
-                        disp /= @splat(2, disp_length);
+                        disp /= @splat(disp_length);
 
                         var overlap = balls.radius[i] + balls.radius[j] - disp_length;
                         if (overlap > 0) {
                             overlap /= 2;
 
-                            balls.disp[i] -= @splat(2, overlap) * disp;
-                            balls.disp[j] += @splat(2, overlap) * disp;
+                            balls.disp[i] -= splat_v2(overlap) * disp;
+                            balls.disp[j] += splat_v2(overlap) * disp;
 
                             var force_disp_comp = dot(balls.force[i], disp);
                             if (force_disp_comp > 0) {
-                                balls.force[i] -= @splat(2, force_disp_comp) * disp;
+                                balls.force[i] -= splat_v2(force_disp_comp) * disp;
                             }
 
                             if (dot(balls.vel[i], disp) > 0) {
@@ -647,7 +651,7 @@ pub fn main() void {
 
                             force_disp_comp = dot(balls.force[j], disp);
                             if (force_disp_comp < 0) {
-                                balls.force[j] -= @splat(2, force_disp_comp) * disp;
+                                balls.force[j] -= splat_v2(force_disp_comp) * disp;
                             }
 
                             if (dot(balls.vel[j], disp) < 0) {
@@ -693,10 +697,10 @@ pub fn main() void {
                     for (balls.edges) |*edge| {
                         var width = balls.pos[edge.end] - balls.pos[edge.start];
                         var full_length = abs_v2(width);
-                        var height = @splat(2, (1.0 - clamped_frac(full_length, edge.min_length, edge.max_length)) * edge.half_height * 2) * normal_vector(width);
+                        var height = splat_v2(1.0 - clamped_frac(full_length, edge.min_length, edge.max_length) * edge.half_height * 2) * normal_vector(width);
 
                         var spring_hitbox = Parallelogram{
-                            .pos = balls.pos[edge.start] - height / @splat(2, @as(f32, 2)),
+                            .pos = balls.pos[edge.start] - height / splat_v2(2),
                             .width = width,
                             .height = height,
                         };
@@ -723,8 +727,8 @@ pub fn main() void {
             while (i < balls.count) : (i += 1) {
                 balls.pos[i] += balls.disp[i];
 
-                balls.vel[i] += balls.force[i] / @splat(2, balls.mass[i]) * @splat(2, dt);
-                balls.pos[i] += balls.vel[i] * @splat(2, dt);
+                balls.vel[i] += balls.force[i] * splat_v2(dt / balls.mass[i]);
+                balls.pos[i] += balls.vel[i] * splat_v2(dt);
             }
         }
 
