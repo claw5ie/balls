@@ -6,14 +6,14 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "balls",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
     exe.linkLibC();
     exe.linkSystemLibrary("raylib");
-    exe.addObjectFile(.{ .path = "src/libraygui.o" });
-    exe.addIncludePath(.{ .path = "src" });
+    exe.addObjectFile(b.path("src/libraygui.o"));
+    exe.addIncludePath(b.path("src"));
 
     b.installArtifact(exe);
 

@@ -68,7 +68,7 @@ fn norm_coord_in_pixels_v2(pos: Vec2) ray.Vector2 {
 }
 
 fn norm_coord_in_pixels_r(rect: Rect) ray.Rectangle {
-    var pos = norm_coord_in_pixels_v2(rect.pos);
+    const pos = norm_coord_in_pixels_v2(rect.pos);
     var result = ray.Rectangle{
         .x = pos.x,
         .y = pos.y,
@@ -106,7 +106,7 @@ fn abs_f32(v: f32) f32 {
 
 fn abs_v2(v: Vec2) f32 {
     var u = v;
-    var m = @max(abs_f32(v[0]), abs_f32(v[1]));
+    const m = @max(abs_f32(v[0]), abs_f32(v[1]));
     if (m == 0) {
         return 0;
     } else {
@@ -126,7 +126,7 @@ inline fn splat_v2(scalar: f32) Vec2 {
 
 fn normalize(v: Vec2) Vec2 {
     var result = v;
-    var length = abs_v2(v);
+    const length = abs_v2(v);
     result /= @splat(length);
 
     return result;
@@ -141,8 +141,8 @@ fn dot(v0: Vec2, v1: Vec2) f32 {
 }
 
 fn reflect(vec: Vec2, dir: Vec2) Vec2 {
-    var d = normalize(dir);
-    var w = Vec2{ cross(vec, d), dot(d, vec) };
+    const d = normalize(dir);
+    const w = Vec2{ cross(vec, d), dot(d, vec) };
 
     return Vec2{ cross(d, w), dot(d, w) };
 }
@@ -152,7 +152,7 @@ fn clamped_frac(value: f32, lower_bound: f32, upper_bound: f32) f32 {
 }
 
 fn normal_vector(v: Vec2) Vec2 {
-    var n = normalize(v);
+    const n = normalize(v);
     return Vec2{ -n[1], n[0] };
 }
 
@@ -166,19 +166,19 @@ fn is_inside_parallelogram(point: Vec2, shape: Parallelogram) bool {
     // | width[1] height[1] |      = ---------------------------------------------- * | -width[1]  width[0]  |
     //                                 width[0] * height[1] - width[1] * height[0]
 
-    var det = shape.width[0] * shape.height[1] - shape.width[1] * shape.height[0];
+    const det = shape.width[0] * shape.height[1] - shape.width[1] * shape.height[0];
     std.debug.assert(det > 1e-8);
-    var p = (point - shape.pos) / splat_v2(det);
+    const p = (point - shape.pos) / splat_v2(det);
 
-    var x = (shape.height[1] * p[0] - shape.height[0] * p[1]);
-    var y = (-shape.width[1] * p[0] + shape.width[0] * p[1]);
+    const x = (shape.height[1] * p[0] - shape.height[0] * p[1]);
+    const y = (-shape.width[1] * p[0] + shape.width[0] * p[1]);
 
     return 0 <= x and x <= 1 and 0 <= y and y <= 1;
 }
 
 fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
-    var pos = balls.pos[index];
-    var radius = balls.radius[index];
+    const pos = balls.pos[index];
+    const radius = balls.radius[index];
 
     var overlap = pos[0] - radius - LEFT;
     if (overlap < 0) {
@@ -232,9 +232,9 @@ fn intersect_ball_against_walls(balls: *Balls, index: usize) void {
 fn add_gravity_force(balls: *Balls, i: usize, j: usize) void {
     const GRAVITY_CONSTANT = 0.005;
 
-    var disp = balls.pos[j] - balls.pos[i];
-    var disp_length = abs_v2(disp);
-    var force = GRAVITY_CONSTANT * balls.mass[i] * balls.mass[j] / (disp_length * disp_length);
+    const disp = balls.pos[j] - balls.pos[i];
+    const disp_length = abs_v2(disp);
+    const force = GRAVITY_CONSTANT * balls.mass[i] * balls.mass[j] / (disp_length * disp_length);
 
     disp /= @splat(disp_length);
 
@@ -243,15 +243,15 @@ fn add_gravity_force(balls: *Balls, i: usize, j: usize) void {
 }
 
 fn add_spring_force(balls: *Balls, spring: Spring) void {
-    var i = spring.start;
-    var j = spring.end;
+    const i = spring.start;
+    const j = spring.end;
     var disp = balls.pos[j] - balls.pos[i];
-    var disp_length = abs_v2(disp);
+    const disp_length = abs_v2(disp);
 
     disp /= @splat(disp_length);
 
-    var damping = dot(disp, balls.vel[j] - balls.vel[i]) * spring.damping_factor;
-    var force = spring.stiffness * (disp_length - spring.rest_length) + damping;
+    const damping = dot(disp, balls.vel[j] - balls.vel[i]) * spring.damping_factor;
+    const force = spring.stiffness * (disp_length - spring.rest_length) + damping;
 
     balls.force[i] += splat_v2(force) * disp;
     balls.force[j] -= splat_v2(force) * disp;
@@ -294,14 +294,14 @@ fn add_spring_force(balls: *Balls, spring: Spring) void {
 var spring_points_buffer: [32]Vec2 = undefined;
 
 fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
-    var start = balls.pos[spring.start];
+    const start = balls.pos[spring.start];
     var disp = balls.pos[spring.end] - start;
-    var full_length = abs_v2(disp);
+    const full_length = abs_v2(disp);
 
     disp /= @splat(full_length);
 
-    var peak_count = 2 * spring.blade_count - @intFromBool(spring.blade_count % 2 == 0);
-    var point_count = peak_count + 2 * 2;
+    const peak_count = 2 * spring.blade_count - @intFromBool(spring.blade_count % 2 == 0);
+    const point_count = peak_count + 2 * 2;
     var points: []Vec2 = spring_points_buffer[0..point_count];
 
     points[0] = Vec2{ 0, 0 };
@@ -311,7 +311,7 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     points[point_count - 1] = Vec2{ full_length, 0 };
 
     {
-        var base_length = (full_length - 2 * spring.hand_length) / @as(f32, @floatFromInt(peak_count));
+        const base_length = (full_length - 2 * spring.hand_length) / @as(f32, @floatFromInt(peak_count));
         var peak = Vec2{
             points[1][0] + base_length / 2,
             (1.0 - clamped_frac(full_length, spring.min_length, spring.max_length)) * spring.half_height,
@@ -328,8 +328,8 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     {
         var i: usize = 0;
         while (i < point_count) : (i += 1) {
-            var x = points[i][0];
-            var y = points[i][1];
+            const x = points[i][0];
+            const y = points[i][1];
             points[i] = .{
                 start[0] + disp[0] * x - disp[1] * y,
                 start[1] + disp[1] * x + disp[0] * y,
@@ -340,8 +340,8 @@ fn draw_spring(balls: *Balls, spring: Spring, color: ray.Color) void {
     {
         var i: usize = 1;
         while (i < point_count) : (i += 1) {
-            var start_in_pixels = norm_coord_in_pixels_v2(points[i - 1]);
-            var end_in_pixels = norm_coord_in_pixels_v2(points[i]);
+            const start_in_pixels = norm_coord_in_pixels_v2(points[i - 1]);
+            const end_in_pixels = norm_coord_in_pixels_v2(points[i]);
             ray.DrawLineV(start_in_pixels, end_in_pixels, color);
         }
     }
@@ -484,12 +484,12 @@ pub fn main() void {
         },
     };
 
-    var ball_menu_hitbox = Rect{
+    const ball_menu_hitbox = Rect{
         .pos = .{ LEFT, DOWN },
         .size = .{ 1.2, 0.12 * @as(f32, @floatFromInt(ball_menu_info.len)) },
     };
     var should_draw_ball_menu = false;
-    var spring_menu_hitbox = Rect{
+    const spring_menu_hitbox = Rect{
         .pos = .{ LEFT, DOWN },
         .size = .{ 1.2, 0.12 * @as(f32, @floatFromInt(spring_menu_info.len)) },
     };
@@ -502,7 +502,7 @@ pub fn main() void {
         {
             var i: usize = 0;
             while (i < balls.count) : (i += 1) {
-                var center = norm_coord_in_pixels_v2(balls.pos[i]);
+                const center = norm_coord_in_pixels_v2(balls.pos[i]);
                 ray.DrawCircleV(center, length_in_pixels(balls.radius[i]), balls.color[i]);
                 ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.force[i] / splat_v2(4)), 3, ray.RED);
                 ray.DrawLineEx(center, norm_coord_in_pixels_v2(balls.pos[i] + balls.vel[i] / splat_v2(4)), 3, ray.GREEN);
@@ -629,7 +629,7 @@ pub fn main() void {
                     var j: usize = i + 1;
                     while (j < balls.count) : (j += 1) {
                         var disp = balls.pos[j] - balls.pos[i];
-                        var disp_length = abs_v2(disp);
+                        const disp_length = abs_v2(disp);
 
                         disp /= @splat(disp_length);
 
@@ -665,7 +665,7 @@ pub fn main() void {
 
         // Select ball or spring.
         {
-            var mouse_pos = pixels_in_norm_coord(ray.GetMousePosition());
+            const mouse_pos = pixels_in_norm_coord(ray.GetMousePosition());
 
             if (ray.IsMouseButtonPressed(ray.MOUSE_BUTTON_LEFT)) {
                 if (!should_draw_spring_menu and !is_inside_rect(mouse_pos, ball_menu_hitbox)) {
@@ -695,11 +695,11 @@ pub fn main() void {
                     var is_spring_inside = false;
 
                     for (balls.edges) |*edge| {
-                        var width = balls.pos[edge.end] - balls.pos[edge.start];
-                        var full_length = abs_v2(width);
-                        var height = splat_v2(1.0 - clamped_frac(full_length, edge.min_length, edge.max_length) * edge.half_height * 2) * normal_vector(width);
+                        const width = balls.pos[edge.end] - balls.pos[edge.start];
+                        const full_length = abs_v2(width);
+                        const height = splat_v2(1.0 - clamped_frac(full_length, edge.min_length, edge.max_length) * edge.half_height * 2) * normal_vector(width);
 
-                        var spring_hitbox = Parallelogram{
+                        const spring_hitbox = Parallelogram{
                             .pos = balls.pos[edge.start] - height / splat_v2(2),
                             .width = width,
                             .height = height,
